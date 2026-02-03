@@ -11,48 +11,90 @@ xfs_growfs /
 xfs_growfs /var
 xfs_growfs /home
 
-# This is mandatory, nodejs installtion will break SSH if we dont update these packages
-dnf update -y openssl\* openssh\* -y
-yum install java-21-openjdk -y
+set -euxo pipefail
 
+# ----------------------------------------------------
+# Base OS update
+# ----------------------------------------------------
+dnf update -y
+
+# ----------------------------------------------------
+# Java (Jenkins Agent requirement)
+# Java 17 is sufficient and stable
+# ----------------------------------------------------
+dnf install -y java-17-openjdk
+
+# ----------------------------------------------------
+# Node.js 20 (safe method for RHEL 9)
+# ----------------------------------------------------
 dnf module disable nodejs -y
 dnf module enable nodejs:20 -y
-dnf install nodejs -y
+dnf install -y nodejs
 
-# docker
-yum install -y yum-utils
+# ----------------------------------------------------
+# Docker
+# ----------------------------------------------------
+dnf install -y yum-utils
 yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-yum install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
-systemctl start docker
+
+dnf install -y \
+  docker-ce \
+  docker-ce-cli \
+  containerd.io \
+  docker-buildx-plugin \
+  docker-compose-plugin
+
 systemctl enable docker
+systemctl start docker
+
+# Allow ec2-user to run Docker
 usermod -aG docker ec2-user
 
+# ----------------------------------------------------
 # Terraform
-yum install -y yum-utils
+# ----------------------------------------------------
 yum-config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
-yum -y install terraform
+dnf install -y terraform
 
+# ----------------------------------------------------
 # Trivy
-curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.68.2
+# ----------------------------------------------------
+curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+  | sh -s -- -b /usr/local/bin
 
+# ----------------------------------------------------
 # Maven
-dnf install maven -y
+# ----------------------------------------------------
+dnf install -y maven
 
+# ----------------------------------------------------
 # Python
-dnf install python3 gcc python3-devel -y
+# ----------------------------------------------------
+dnf install -y python3 python3-pip gcc python3-devel
 
+# ----------------------------------------------------
 # Helm
-curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4
-chmod 700 get_helm.sh
-./get_helm.sh
+# ----------------------------------------------------
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash
 
-# eksctl and kubectl
-curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.34.2/2025-11-13/bin/linux/amd64/kubectl
-chmod +x ./kubectl
-mkdir -p $HOME/bin && cp ./kubectl  /usr/local/bin && export PATH=$HOME/bin:$PATH
+# ----------------------------------------------------
+# kubectl
+# ----------------------------------------------------
+curl -Lo /usr/local/bin/kubectl \
+  https://s3.us-west-2.amazonaws.com/amazon-eks/1.34.2/2025-11-13/bin/linux/amd64/kubectl
+chmod +x /usr/local/bin/kubectl
 
+# ----------------------------------------------------
+# eksctl
+# ----------------------------------------------------
 ARCH=amd64
 PLATFORM=$(uname -s)_$ARCH
 curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz"
-tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp && rm eksctl_$PLATFORM.tar.gz
-sudo install -m 0755 /tmp/eksctl /usr/local/bin && rm /tmp/eksctl
+tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp
+install -m 0755 /tmp/eksctl /usr/local/bin/eksctl
+rm -f eksctl_$PLATFORM.tar.gz /tmp/eksctl
+
+# ----------------------------------------------------
+# Validation log
+# ----------------------------------------------------
+echo "Jenkins Agent setup completed successfully"
